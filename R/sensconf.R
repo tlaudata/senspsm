@@ -58,7 +58,7 @@ sensconf <- function(data, treatment, indvar, outvar, categorical, p00 = 0.5, p0
       dplyr::mutate(ycat = factor(ycatnum))
   }
 
-  future::plan(future::multicore, workers = workers)
+  future::plan(future::multisession, workers = workers)
 
   temp <- rsample::bootstraps(data, times = R)
   temp$results <- furrr::future_map(temp$splits, ~ sensbas(

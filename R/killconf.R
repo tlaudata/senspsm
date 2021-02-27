@@ -56,7 +56,7 @@ killconf <- function(data, treatment, indvar, outvar, categorical = TRUE, d, s, 
   p0dot <- p00 * evalue[1] + p01 * evalue[2]
   sres <- p1dot - p0dot
 
-  future::plan(future::multicore, workers = workers)
+  future::plan(future::multisession, workers = workers)
 
   tempdat <- rsample::bootstraps(data, times = R)
 
