@@ -14,5 +14,11 @@ Then install senspsm package as follows:
 
 ```
 library(devtools)
-install_github("tlaudata/senspsm")
+install_github("tlaudata/senspsm",build_vignettes=TRUE)
+```
+
+Vignette can be accessed using the following commanc
+
+```
+vignette("senspsm")
 ```
