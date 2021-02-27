@@ -1,0 +1,431 @@
+---
+title: "dev_history for sensps package"
+author: "Thomas Laurent"
+date: "05/02/2021"
+output: html_document
+---
+
+```{r development, include=FALSE}
+library(testthat)
+```
+
+# Introduction
+
+Propensity score matching relies on the Conditional Independence Assumption (CIA) which corresponds to the absence of unobserved confounders. In some data collection context, CIA may be plausible, however the absence of unobserved confounders cannot be completely ascertained. Hence, conduction of sensitivity analyses to assess the robustness of this assumption would strengthen the value of the generated evidence.
+
+# General framework
+
+The potential confounder is simulated in the real data and used as an additional covariate for the estimation of the target estimator (ATT: Average Treatment effect among the Treated). The potential confounder can be simulated under different hypotheses, allowing to test various relationships with the treatment and the outcome.
+
+# Propensity score matching and ATT
+Consider the outcome for causal inference, where $Y_1$ stands for the outcome when the observations are being treated (T=1), and $Y_0$ if the unit is not exposed (T=1). ATT is defined as follows:
+
+$$E(Y_1-Y_0\mid T=1)$$
+
+If we defined the set of covariates as W, CIA would be defined as follows:
+
+$$\{Y_1,Y_0\} \perp \!\!\! \perp  T \mid W$$
+This corresponds to the absence of influence of treatment assignment on the potential outcomes when conditioned by the observed covariates W.
+
+To address the problem of dimensionality when conditioning on W, propensity score is a widely used methods. The propensity score corresponds to the probability of receiving the treatment given the observed covariates: $p(W)=P(T=1 \mid W)$. An important property of the propensity score is that if the potential outcomes are independent of the treatment assignment when conditioned using W, this would be also the case when conditioned using the propensity score. Hence, the propensity score can be used as an univariate summary of all observed variables. Propensity score is unknown and is estimated generally using probit or logit regression.
+
+The target estimand, ATT, is defined as follows:
+
+$$\tau_{ATT}=E(Y_1-Y_0 \mid T=1)=E_{p(W)\mid T=1}[E(Y_1\mid p(W),T=1)-E(Y_0\mid p(W),T=0)]$$
+
+# Sensitivity analysis
+
+When the treatment assignement is not unconfounded, the controls cannot be used to estimate counterfactual outcomes:
+
+$$E(Y_0 \mid T=1,W) \neq E(Y_0 \mid T=0,W)$$
+
+but conditioning by U, an unobserved confounder, would be sufficient for the equality to hold:
+
+$$E(Y_0 \mid T=1,W,U)=E(Y_0 \mid T=0,W,U)$$
+
+We can characterize U distribution by choosing four parameters defined as follows:
+
+$$p_{ij}=P(U=1 \mid T=i,Y=j)=P(U=1 \mid T=i,Y=j,W)$$
+
+When conditioned on both T and Y, it is assumed that U is independent of W. Based on the parameters defined above, U is simulated using Monte Carlo method. The simulated U is then included in the set of covariates to estimate the propensity score and the ATT is estimated. The estimator for the standard error for ATT is as follows, based on ATT and se for each imputed dataset:
+
+- Within-imputation variance
+$$se^2_W=\frac{1}{m}\sum_{k=1}^{m}se^2_k$$
+$$with \space k=1,2,...,m for\space each \space imputed \space dataset$$
+- Between-imputation variance:
+
+$$se^2_B=\frac{1}{m-1}\sum_{k=1}^{m}(\hat{ATT_k}-\hat{ATT})^2$$
+
+Hence, the expression for the total variance is expressed as:
+
+$$se^2_T=se^2_W+(1+\frac{1}{m})se^2_B$$
+
+```{r description}
+# Describe your package
+fusen::fill_description(
+  fields = list(
+    Title = "Sensitivity analysis to unobserved confounding",
+    Description = "Wrappers to conduct sensitivity to unmeasured confounding in 1:1 propensity score matching. You provide your assumptions on the strength of the potential unobserved confounding and confidence interval of ATT is estimated using bootstrap method.",
+    `Authors@R` = c(
+      person("Thomas", "Laurent", email = "t.laurent@gmail.com", role = c("aut", "cre")),
+      person(given = "", role = "")
+    )
+  ), overwrite = TRUE,pkg="/Users/thomaslaurent/Documents/These/senspsm/")
+# Define License with use_*_license()
+usethis::use_mit_license("Thomas Laurent")
+usethis::use_pipe(export = TRUE)
+```
+
+# Effect of calibrated confounders
+
+In this simulation, the parameters are set to match the distribution of observed confounders conditioned on the treatment assignment and the outcome to estimate ATT. Over the simulation, the means for gamma, the "outcome effect" of U, and lambda, "the selection effect of U" are computed.
+The corresponding definitions are given below:
+
+$$\Gamma=\frac{\frac{P(Y=1 \mid T=0,U=1,W)}{P(Y=0 \mid T=0,U=1,W)}}{\frac{P(Y=1 \mid T=0,U=0,W)}{P(Y=0 \mid T=0,U=0,W)}}$$
+
+$$\Lambda=\frac{\frac{P(T=1 \mid U=1,W)}{P(T=0\mid U=1,W)}}{\frac{P(T=1 \mid U=0,W)}{P(T=0 \mid U=0,W)}}$$
+
+
+# Effect of "killer" confounders
+
+In this simulation, the values for d (effect of U on the untreated outcome) and s (effect of U on the selection into treatment) values, as defined below, are used to simulate U since the confounder distribution can be fully described using d, s and $P(U=1)$. D and s values are expected to bias estimate of ATT toward the null. For example, a table describing changes in ATT estimate by incrementing d and s values using a grid would help to characterize potential unobserved confounders. For each, ATT estimation based on d and s, corresponding ranges of values for $\Lambda$ and $\Gamma$ are provided. ATT estimate would be considered as robust when the characteristics of a potential unobserved confounder would be implausible.
+
+$$d=p_{01}-p_{00}$$
+
+$$s=p_{1.}-p_{0.}$$
+
+```{r function}
+#' Basic function to perform sensitivity analysis in parallel
+#' This function takes bootstrapped data frame and fraction of U=1 by treatment/outcome to calculate ATT and values of lambda and gamma
+#'
+#' @param trial a rsample bootstrapped dataframe
+#' @param treatment (`character`) Name of treatment variable
+#' @param indvar (`character`) Vector of names of covariate variables
+#' @param outvar (`character`) Name of the outcome variable
+#' @param p00 (`numeric`) Value of the probability U=1 when T=0 and Y=0
+#' @param p01 (`numeric`) Value of the probability U=1 when for T=0 and Y=1
+#' @param p10 (`numeric`) Value of the probability U=1 when for T=1 and Y=0
+#' @param p11 (`numeric`) Value of the probability U=1 when for T=1 and Y=1
+#' @param caliperval (`numeric`) Value of the caliper
+#' @param distance (`character`) Type of the distance; "logit" by default
+#' @importFrom magrittr "%>%""
+#'
+#' @return a list containing ATT value, SE, lambda and gamma values
+#' @export
+sensbas <- function(trial, treatment, indvar, outvar, p00 = 0.5, p01 = 0.5, p10 = 0.5, p11 = 0.5, caliperval = 0.1, distance = "logit") {
+  formraw <- paste(treatment, "~", paste(indvar, collapse = "+"))
+  formmod <- as.formula(paste(formraw, "+u", collapse = "+"))
+  formout <- as.formula(paste("ycat ~", paste(c(indvar, "u"), collapse = "+")))
+  out <- try({
+    df <- rsample::analysis(trial) %>%
+      dplyr::mutate(pval = dplyr::case_when(
+        !!rlang::sym(treatment) == "0" & ycat == "0" ~ p00,
+        !!rlang::sym(treatment) == "0" & ycat == "1" ~ p01,
+        !!rlang::sym(treatment) == "1" & ycat == "0" ~ p10,
+        !!rlang::sym(treatment) == "1" & ycat == "1" ~ p11
+      ))
+
+
+    b <- df$pval %>%
+      furrr::future_map(~ rbinom(1, 1, .), .options = furrr::furrr_options(seed = TRUE)) %>%
+      unlist()
+
+    df$u <- b
+
+    df <- df %>%
+      dplyr::mutate(u = factor(u))
+
+    # PS matching
+    mod_match <- MatchIt::matchit(formmod,
+      method = "nearest", data = df, distance = distance, caliper = caliperval
+    )
+
+    df <- df %>%
+      dplyr::mutate(id = as.integer(dplyr::row_number()))
+
+    temp_match <- mod_match$match.matrix %>%
+      data.frame(stringsAsFactors = FALSE)
+    temp_match <- temp_match %>%
+      tibble::rownames_to_column() %>%
+      na.omit()
+    temp <- temp_match %>%
+      setNames(c("1", "0")) %>%
+      dplyr::mutate(id_pairs = dplyr::row_number()) %>%
+      tidyr::gather(key = treatment, value = id, -id_pairs) %>%
+      dplyr::mutate(across(everything(), ~ as.integer(.)))
+
+    df2 <- df %>%
+      dplyr::inner_join(temp, by = c("id")) %>%
+      dplyr::mutate(id = factor(id))
+
+    mod_dat <- df2 %>%
+      dplyr::select(!!rlang::sym("ycatnum"), !!rlang::sym(treatment), !!rlang::sym("id_pairs")) %>%
+      na.omit() %>%
+      dplyr::mutate(id_pairs = as.numeric(id_pairs)) %>%
+      dplyr::mutate(treatment := factor(!!rlang::sym(treatment))) %>%
+      dplyr::mutate(id_pairs = factor(id_pairs))
+
+    att <- mean(mod_dat$ycatnum[mod_dat[[treatment]] == 1]) - mean(mod_dat$ycatnum[mod_dat[[treatment]] == 0])
+
+    nt <- length(mod_dat$ycatnum[mod_dat[[treatment]] == 1])
+    seval <- sqrt(var(mod_dat$ycatnum[mod_dat[[treatment]] == 1]) / nt +
+      var(mod_dat$ycatnum[mod_dat[[treatment]] == 0]) / nt)
+
+    modgamma <- stats::glm(formout,
+      data = df %>% dplyr::filter(!!rlang::sym(treatment) == 0),
+      family = binomial(link = distance)
+    )
+
+    gamma <- as.numeric(exp(tail(coef(modgamma), n = 1)))
+
+    modlambda <- stats::glm(formmod,
+      data = df,
+      family = binomial(link = distance)
+    )
+
+    lambda <- as.numeric(exp(tail(coef(modlambda), n = 1)))
+
+    list(att, seval, gamma, lambda)
+  })
+
+  return(out)
+}
+
+```
+
+```{r function}
+#' Function to perform sensitivity analysis of 'killer' confounders
+#' This function takes a data frame, and d and s values as arguments, as defined by Ichino to calculate ATT, SE and ranges for lambda and gamma
+#'
+#' @param data a dataframe
+#' @param treatment (`character`) Name of treatment variable
+#' @param indvar (`character`) Vector of names of covariate variables
+#' @param outvar (`character`) Name of the outcome variable
+#' @param categorical (`boolean`) TRUE if categorical, FALSE if not
+#' @param d (`numeric`) Value of the outcome effect of U in the absence of treatment
+#' @param s (`numeric`) Value of the effect of U on the treatment selection
+#' @param pu (`numeric`) Probability of U=1
+#' @param R (`numeric`) Number of simulations
+#' @param workers (`numeric`) Number of workers for parallel processing
+#' @param digits (`numeric`) Number of digits
+#' @param distance (`character`) Type of the distance; "logit" by default
+#' @param caliperval (`numeric`) Value of the caliper
+#' @importFrom magrittr "%>%"
+#'
+#' @return a data frame with ATT, SE and ranges for lambda and gamma
+#' @export
+killconf <- function(data, treatment, indvar, outvar, categorical = TRUE, d, s, pu = 0.4, R = 1000, workers = 6, digits = 3, distance = "logit", caliperval = 0.1) {
+  if ((!identical(sort(unique(data[[treatment]])), as.integer(c(0, 1)))) && (!identical(sort(unique(data[[treatment]])), as.numeric(c(0, 1))))) stop("Treatment variable should be binary")
+  if (categorical == TRUE && ((!identical(sort(unique(data[[outvar]])), as.integer(c(0, 1)))) && (!identical(sort(unique(data[[outvar]])), as.numeric(c(0, 1)))))) stop("Outcome variable should be binary")
+
+  if (categorical == TRUE) {
+    data <- data %>%
+      dplyr::mutate(ycatnum := !!rlang::sym(outvar)) %>%
+      dplyr::mutate(ycat = factor(ycatnum))
+  } else {
+    thresval <- mean(data[[outvar]])
+    data <- data %>%
+      dplyr::mutate(ycatnum := ifelse(!!rlang::sym(outvar) < thresval, 0, 1)) %>%
+      dplyr::mutate(ycat = factor(ycatnum))
+  }
+
+  evalue <- data %>%
+    dplyr::group_by(!!rlang::sym(treatment)) %>%
+    dplyr::count(ycat) %>%
+    dplyr::mutate(prop = n / sum(n)) %>%
+    dplyr::ungroup() %>%
+    dplyr::select(prop) %>%
+    dplyr::pull()
+
+  fvalue <- data %>%
+    dplyr::count(!!rlang::sym(treatment), ycat) %>%
+    dplyr::mutate(prop = n / sum(n)) %>%
+    dplyr::select(prop) %>%
+    dplyr::pull()
+
+  p00 <- (pu - d * fvalue[2] - (fvalue[4] + fvalue[3]) * (s + d * evalue[2]) / (evalue[3] + evalue[4])) / (fvalue[1] + fvalue[2] + (evalue[1] + evalue[2]) / (evalue[3] + evalue[4]) * (fvalue[4] + fvalue[3]))
+  p01 <- d + p00
+  p11 <- (s + p00 * (evalue[1]) + (d + p00) * evalue[2]) / (evalue[3] + evalue[4])
+  p10 <- p11
+  dres <- p01 - p00
+  p1dot <- p10 * evalue[3] + p11 * evalue[4]
+  p0dot <- p00 * evalue[1] + p01 * evalue[2]
+  sres <- p1dot - p0dot
+
+  future::plan(future::multicore, workers = workers)
+
+  tempdat <- rsample::bootstraps(data, times = R)
+
+  tempdat$results <- furrr::future_map(tempdat$splits, ~ sensbas(
+    trial = .x, treatment = treatment, indvar = indvar,
+    outvar = outvar, p00 = p00, p01 = p01, p10 = p10, p11 = p11, distance = distance,
+    caliperval = caliperval
+  ),
+  .options = furrr::furrr_options(seed = TRUE)
+  )
+
+  ressim <- unlist(lapply(tempdat$results, unlist))
+  ressim <- matrix(ressim, ncol = 4, byrow = TRUE)
+
+  ATT <- mean(ressim[, 1])
+
+  se <- sqrt(sum(ressim[, 2]^2) / R + (R + 1) / (R * (R - 1)) * sum((ressim[, 1] - ATT)^2))
+
+  min_gamma <- round(min(ressim[, 3]), digits = digits)
+  max_gamma <- round(max(ressim[, 3]), digits = digits)
+  gamma_res <- paste0("[", min_gamma, " ; ", max_gamma, "]")
+
+  min_lambda <- round(min(ressim[, 4]), digits = digits)
+  max_lambda <- round(max(ressim[, 4]), digits = digits)
+  lambda_res <- paste0("[", min_lambda, " ; ", max_lambda, "]")
+
+  return(data.frame(d = d, s = s, att = paste0(round(ATT, digits = digits), " (", round(se, digits = digits), ")"), gamma = gamma_res, lambda = lambda_res))
+}
+```
+
+```{r tests}
+test_that("killconf works properly and show error if needed", {
+  expect_error({
+    data(lalonde, package = "Matching")
+
+    data <- dplyr::mutate(lalonde,
+      black = factor(black),
+      hisp = factor(hisp),
+      married = factor(married),
+      treat = as.character(treat)
+    )
+
+    killconf(data = data, treatment = "treat", indvar = c("age", "educ", "black", "hisp", "married", "re75", "re74"), outvar = "re78", categorical = FALSE, R = 5)
+  })
+  expect_error({
+    data(lalonde, package = "Matching")
+
+    data <- dplyr::mutate(lalonde,
+      black = factor(black),
+      hisp = factor(hisp),
+      married = factor(married)
+    )
+
+    killconf(data = data, treatment = "treat", indvar = c("age", "educ", "black", "hisp", "married", "re75", "re74"), outvar = "re78", categorical = TRUE, R = 5)
+  })
+})
+```
+
+```{r function}
+#' Function to perform sensitivity analysis of calibrated confounders
+#' This function calculate ATT, SE , and lambda and gamma values for a set of conditional probabilities for U
+#'
+#' @param data a dataframe
+#' @param treatment (`character`) Name of treatment variable
+#' @param indvar (`character`) Vector of names of covariate variables
+#' @param outvar (`character`) Name of the outcome variable
+#' @param categorical (`boolean`) TRUE if categorical, FALSE if not
+#' @param p00 (`numeric`) Value of the probability U=1 when T=0 and Y=0
+#' @param p01 (`numeric`) Value of the probability U=1 when for T=0 and Y=1
+#' @param p10 (`numeric`) Value of the probability U=1 when for T=1 and Y=0
+#' @param p11 (`numeric`) Value of the probability U=1 when for T=1 and Y=1
+#' @param R (`numeric`) Number of simulations
+#' @param workers (`numeric`) Number of workers for parallel processing
+#' @param digits (`numeric`) Number of digits
+#' @param distance (`character`) Type of the distance; "logit" by default
+#' @param caliperval (`numeric`) Value of the caliper
+#' @importFrom magrittr "%>%"
+#'
+#' @return a data frame with ATT, SE, and lambda and gamma values
+#' @export
+sensconf <- function(data, treatment, indvar, outvar, categorical, p00 = 0.5, p01 = 0.5, p10 = 0.5, p11 = 0.5, R = 1000, workers = 6, digits = 3,
+                     distance = "logit", caliperval = 0.1) {
+  if ((!identical(sort(unique(data[[treatment]])), as.integer(c(0, 1)))) && (!identical(sort(unique(data[[treatment]])), as.numeric(c(0, 1))))) stop("Treatment variable should be binary")
+  if (categorical == TRUE && ((!identical(sort(unique(data[[outvar]])), as.integer(c(0, 1)))) && (!identical(sort(unique(data[[outvar]])), as.numeric(c(0, 1)))))) stop("Outcome variable should be binary")
+  if ((p00 <= 0) | (p01 <= 0) | (p10 <= 0) | (p11 <= 0)) stop("Probabilities cannot be set to zero or negative")
+
+  if (categorical == TRUE) {
+    data <- data %>%
+      dplyr::mutate(ycatnum := !!rlang::sym(outvar)) %>%
+      dplyr::mutate(ycat = factor(ycatnum))
+  } else {
+    thresval <- mean(data[[outvar]])
+    data <- data %>%
+      dplyr::mutate(ycatnum := ifelse(!!rlang::sym(outvar) < thresval, 0, 1)) %>%
+      dplyr::mutate(ycat = factor(ycatnum))
+  }
+
+  future::plan(future::multicore, workers = workers)
+
+  temp <- rsample::bootstraps(data, times = R)
+  temp$results <- furrr::future_map(temp$splits, ~ sensbas(
+    trial = .x, indvar = indvar, outvar = outvar, treatment = treatment,
+    p00 = p00, p01 = p01, p10 = p10, p11 = p11, distance = distance, caliperval = caliperval
+  ),
+  .options = furrr::furrr_options(seed = TRUE)
+  )
+
+  ressim <- unlist(lapply(temp$results, unlist))
+  ressim <- matrix(ressim, ncol = 4, byrow = TRUE)
+
+  ATT <- round(mean(ressim[, 1]), digits = digits)
+
+  se <- round(sqrt(sum(ressim[, 2]^2) / R + (R + 1) / (R * (R - 1)) * sum((ressim[, 1] - ATT)^2)), digits = digits)
+
+  gamma <- round(mean(ressim[, 3]), digits = digits)
+
+  lambda <- round(mean(ressim[, 4]), digits = digits)
+
+  output_res <- data.frame(ATT = ATT, se = se, gamma = gamma, lambda = lambda)
+
+  return(output_res)
+}
+
+```
+
+```{r tests}
+test_that("sensconf works properly and show error if needed", {
+  expect_error({
+    data(lalonde, package = "Matching")
+
+    data <- dplyr::mutate(lalonde,
+      black = factor(black),
+      hisp = factor(hisp),
+      married = factor(married),
+      treat = as.character(treat)
+    )
+
+    sensconf(data = data, treatment = "treat", indvar = c("age", "educ", "black", "hisp", "married", "re75", "re74"), outvar = "re78", categorical = FALSE, R = 5)
+  })
+  expect_error({
+    data(lalonde, package = "Matching")
+
+    data <- dplyr::mutate(lalonde,
+      black = factor(black),
+      hisp = factor(hisp),
+      married = factor(married)
+    )
+
+    sensconf(data = data, treatment = "treat", indvar = c("age", "educ", "black", "hisp", "married", "re75", "re74"), outvar = "re78", categorical = TRUE, R = 5)
+  })
+})
+```
+
+```{r examples}
+# Example 1
+
+# Import data
+data(lalonde, package = "Matching")
+library(magrittr)
+
+data <- dplyr::mutate(lalonde,
+  black = factor(black),
+  hisp = factor(hisp),
+  married = factor(married)
+)
+
+xvars <- c("age", "educ", "black", "hisp", "married", "re75", "re74")
+outcome <- "re78"
+treatment <- "treat"
+
+# Example 1 (Sensitivity using the effect of 'calibrated' confounders)
+sensconf(data = data, treatment = treatment, indvar = xvars, outvar = outcome, categorical = FALSE, R = 5)
+
+# Example 2 (Sensitivity analysis to characterize the killer confounders)
+killconf(data = data, treatment = treatment, indvar = xvars, outvar = outcome, categorical = FALSE, d = 0.3, s = 0.3, R = 5)
+```

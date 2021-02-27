@@ -1,0 +1,34 @@
+Package: senspsm
+Title: Sensitivity analysis to unobserved confounding
+Version: 0.0.0.9000
+Authors@R: 
+    person(given = "Thomas",
+           family = "Laurent",
+           role = c("aut", "cre"),
+           email = "t.laurent@gmail.com")
+Description: Wrappers to conduct sensitivity to unmeasured
+    confounding in 1:1 propensity score matching. You provide your
+    assumptions on the strength of the potential unobserved confounding
+    and confidence interval of ATT is estimated using bootstrap method.
+License: MIT + file LICENSE
+Imports: 
+    dplyr,
+    furrr,
+    future,
+    MatchIt,
+    rlang,
+    rsample,
+    stats,
+    tibble,
+    tidyr
+Suggests: 
+    knitr,
+    magrittr,
+    rmarkdown,
+    testthat
+VignetteBuilder: 
+    knitr
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.1

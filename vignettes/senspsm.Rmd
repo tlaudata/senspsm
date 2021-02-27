@@ -1,0 +1,120 @@
+---
+title: "senspsm"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{senspsm}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(senspsm)
+```
+
+# Introduction
+
+Propensity score matching relies on the Conditional Independence Assumption (CIA) which corresponds to the absence of unobserved confounders. In some data collection context, CIA may be plausible, however the absence of unobserved confounders cannot be completely ascertained. Hence, conduction of sensitivity analyses to assess the robustness of this assumption would strengthen the value of the generated evidence.
+
+
+# General framework
+
+The potential confounder is simulated in the real data and used as an additional covariate for the estimation of the target estimator (ATT: Average Treatment effect among the Treated). The potential confounder can be simulated under different hypotheses, allowing to test various relationships with the treatment and the outcome.
+
+
+# Propensity score matching and ATT
+
+Consider the outcome for causal inference, where $Y_1$ stands for the outcome when the observations are being treated (T=1), and $Y_0$ if the unit is not exposed (T=1). ATT is defined as follows:
+
+$$E(Y_1-Y_0\mid T=1)$$
+
+If we defined the set of covariates as W, CIA would be defined as follows:
+
+$$\{Y_1,Y_0\} \perp \!\!\! \perp  T \mid W$$
+This corresponds to the absence of influence of treatment assignment on the potential outcomes when conditioned by the observed covariates W.
+
+To address the problem of dimensionality when conditioning on W, propensity score is a widely used methods. The propensity score corresponds to the probability of receiving the treatment given the observed covariates: $p(W)=P(T=1 \mid W)$. An important property of the propensity score is that if the potential outcomes are independent of the treatment assignment when conditioned using W, this would be also the case when conditioned using the propensity score. Hence, the propensity score can be used as an univariate summary of all observed variables. Propensity score is unknown and is estimated generally using probit or logit regression.
+
+The target estimand, ATT, is defined as follows:
+
+$$\tau_{ATT}=E(Y_1-Y_0 \mid T=1)=E_{p(W)\mid T=1}[E(Y_1\mid p(W),T=1)-E(Y_0\mid p(W),T=0)]$$
+
+
+# Sensitivity analysis
+
+When the treatment assignement is not unconfounded, the controls cannot be used to estimate counterfactual outcomes:
+
+$$E(Y_0 \mid T=1,W) \neq E(Y_0 \mid T=0,W)$$
+
+but conditioning by U, an unobserved confounder, would be sufficient for the equality to hold:
+
+$$E(Y_0 \mid T=1,W,U)=E(Y_0 \mid T=0,W,U)$$
+
+We can characterize U distribution by choosing four parameters defined as follows:
+
+$$p_{ij}=P(U=1 \mid T=i,Y=j)=P(U=1 \mid T=i,Y=j,W)$$
+
+When conditioned on both T and Y, it is assumed that U is independent of W. Based on the parameters defined above, U is simulated using Monte Carlo method. The simulated U is then included in the set of covariates to estimate the propensity score and the ATT is estimated. The estimator for the standard error for ATT is as follows, based on ATT and se for each imputed dataset:
+
+- Within-imputation variance
+$$se^2_W=\frac{1}{m}\sum_{k=1}^{m}se^2_k$$
+$$with \space k=1,2,...,m for\space each \space imputed \space dataset$$
+- Between-imputation variance:
+
+$$se^2_B=\frac{1}{m-1}\sum_{k=1}^{m}(\hat{ATT_k}-\hat{ATT})^2$$
+
+Hence, the expression for the total variance is expressed as:
+
+$$se^2_T=se^2_W+(1+\frac{1}{m})se^2_B$$
+
+
+# Effect of calibrated confounders
+
+In this simulation, the parameters are set to match the distribution of observed confounders conditioned on the treatment assignment and the outcome to estimate ATT. Over the simulation, the means for gamma, the "outcome effect" of U, and lambda, "the selection effect of U" are computed.
+The corresponding definitions are given below:
+
+$$\Gamma=\frac{\frac{P(Y=1 \mid T=0,U=1,W)}{P(Y=0 \mid T=0,U=1,W)}}{\frac{P(Y=1 \mid T=0,U=0,W)}{P(Y=0 \mid T=0,U=0,W)}}$$
+
+$$\Lambda=\frac{\frac{P(T=1 \mid U=1,W)}{P(T=0\mid U=1,W)}}{\frac{P(T=1 \mid U=0,W)}{P(T=0 \mid U=0,W)}}$$
+
+
+
+# Effect of "killer" confounders
+
+In this simulation, the values for d (effect of U on the untreated outcome) and s (effect of U on the selection into treatment) values, as defined below, are used to simulate U since the confounder distribution can be fully described using d, s and $P(U=1)$. D and s values are expected to bias estimate of ATT toward the null. For example, a table describing changes in ATT estimate by incrementing d and s values using a grid would help to characterize potential unobserved confounders. For each, ATT estimation based on d and s, corresponding ranges of values for $\Lambda$ and $\Gamma$ are provided. ATT estimate would be considered as robust when the characteristics of a potential unobserved confounder would be implausible.
+
+$$d=p_{01}-p_{00}$$
+
+$$s=p_{1.}-p_{0.}$$
+
+
+```{r examples}
+# Example 1
+
+# Import data
+data(lalonde, package = "Matching")
+library(magrittr)
+
+data <- dplyr::mutate(lalonde,
+  black = factor(black),
+  hisp = factor(hisp),
+  married = factor(married)
+)
+
+xvars <- c("age", "educ", "black", "hisp", "married", "re75", "re74")
+outcome <- "re78"
+treatment <- "treat"
+
+# Example 1 (Sensitivity using the effect of 'calibrated' confounders)
+sensconf(data = data, treatment = treatment, indvar = xvars, outvar = outcome, categorical = FALSE, R = 5)
+
+# Example 2 (Sensitivity analysis to characterize the killer confounders)
+killconf(data = data, treatment = treatment, indvar = xvars, outvar = outcome, categorical = FALSE, d = 0.3, s = 0.3, R = 5)
+```
+
