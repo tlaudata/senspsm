@@ -5,7 +5,7 @@
 #' @param treatment (`character`) Name of treatment variable
 #' @param indvar (`character`) Vector of names of covariate variables
 #' @param outvar (`character`) Name of the outcome variable
-#' @param categorical (`boolean`) TRUE if categorical, FALSE if not
+#' @param categorical (`boolean`) TRUE if categorical, FALSE if not and takes the mean to dichotomize the variable
 #' @param p00 (`numeric`) Value of the probability U=1 when T=0 and Y=0
 #' @param p01 (`numeric`) Value of the probability U=1 when for T=0 and Y=1
 #' @param p10 (`numeric`) Value of the probability U=1 when for T=1 and Y=0

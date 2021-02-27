@@ -5,7 +5,7 @@
 #' @param treatment (`character`) Name of treatment variable
 #' @param indvar (`character`) Vector of names of covariate variables
 #' @param outvar (`character`) Name of the outcome variable
-#' @param categorical (`boolean`) TRUE if categorical, FALSE if not
+#' @param categorical (`boolean`) TRUE if categorical, FALSE if not and takes the mean to dichotomize the variable
 #' @param d (`numeric`) Value of the outcome effect of U in the absence of treatment
 #' @param s (`numeric`) Value of the effect of U on the treatment selection
 #' @param pu (`numeric`) Probability of U=1
